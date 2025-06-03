@@ -1,0 +1,4 @@
+id,type,description,montant_unitaire,date_echeance,created_at
+1,Cotisation annuelle,Cotisation annuelle 2024,50.00,2024-12-31,2024-03-20T10:00:00
+2,Cotisation mensuelle,Cotisation mensuelle mars 2024,20.00,2024-03-31,2024-03-20T10:00:00
+3,Événement spécial,Participation événement printemps,30.00,2024-04-15,2024-03-20T10:00:00 
