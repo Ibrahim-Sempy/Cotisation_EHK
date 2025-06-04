@@ -36,8 +36,11 @@ export default function SettingsScreen() {
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [showResetModal, setShowResetModal] = useState(false);
   const [profileModalVisible, setProfileModalVisible] = useState(false);
-  const [username, setUsername] = useState(user?.username || '');
   const [email, setEmail] = useState(user?.email || '');
+  const [currentPassword, setCurrentPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
   const [helpModalVisible, setHelpModalVisible] = useState(false);
   const [aboutModalVisible, setAboutModalVisible] = useState(false);
 
@@ -93,20 +96,55 @@ export default function SettingsScreen() {
   };
 
   const handleUpdateProfile = async () => {
-    if (!username.trim() || !email.trim()) {
-      setErrorMsg('Le nom d\'utilisateur et l\'email sont obligatoires');
+    if (!email) {
+      setErrorMsg('L\'email est requis');
       return;
     }
 
+    setIsLoading(true);
     try {
+      // Vérifier si l'email a changé
+      const emailChanged = email !== user?.email;
+
+      // Vérifier si un nouveau mot de passe est fourni
+      const passwordChanged = newPassword && confirmPassword;
+
+      if (passwordChanged) {
+        if (newPassword !== confirmPassword) {
+          setErrorMsg('Les mots de passe ne correspondent pas');
+          return;
+        }
+        if (newPassword.length < 6) {
+          setErrorMsg('Le mot de passe doit contenir au moins 6 caractères');
+          return;
+        }
+      }
+
+      // Mettre à jour le profil
       await updateProfile({
-        username: username.trim(),
-        email: email.trim()
+        email,
+        password: passwordChanged ? newPassword : undefined,
+        currentPassword: passwordChanged ? currentPassword : undefined
       });
-      setProfileModalVisible(false);
-      setErrorMsg(null);
+
+      Alert.alert(
+        'Succès',
+        'Profil mis à jour avec succès. Vous devrez vous reconnecter avec vos nouveaux identifiants.',
+        [
+          {
+            text: 'OK',
+            onPress: async () => {
+              setProfileModalVisible(false);
+              await signOut();
+            }
+          }
+        ]
+      );
     } catch (error: any) {
+      console.error('Erreur de mise à jour du profil:', error);
       setErrorMsg(error.message);
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -498,7 +536,7 @@ export default function SettingsScreen() {
           {renderSettingItem(
             <User size={24} color={colors.primary} />,
             'Modifier le profil',
-            'Mettre à jour vos informations personnelles',
+            'Gérer vos informations personnelles',
             () => setProfileModalVisible(true)
           )}
         </View>
@@ -723,62 +761,75 @@ export default function SettingsScreen() {
         visible={profileModalVisible}
         animationType="slide"
         transparent={true}
+        onRequestClose={() => setProfileModalVisible(false)}
       >
-        <View style={styles.modalOverlay}>
-          <View style={[styles.modalContent, { backgroundColor: colors.card }]}>
-            <View style={[styles.modalHeader, { borderBottomColor: colors.border }]}>
-              <Text style={[styles.modalTitle, { color: colors.text }]}>Modifier le profil</Text>
-              <TouchableOpacity onPress={() => setProfileModalVisible(false)}>
-                <Text style={[styles.closeButton, { color: colors.textSecondary }]}>✕</Text>
+        <View style={styles.modalContainer}>
+          <View style={[styles.modalContentProfile, { backgroundColor: colors.card }]}>
+            <View style={styles.modalHeaderProfile}>
+              <Text style={[styles.modalTitleProfile, { color: colors.text }]}>Modifier le profil</Text>
+              <TouchableOpacity
+                onPress={() => setProfileModalVisible(false)}
+                style={styles.closeButtonProfile}
+              >
+                <Text style={{ color: colors.primary }}>Fermer</Text>
               </TouchableOpacity>
             </View>
 
-            <View style={styles.formContainer}>
+            <ScrollView style={styles.modalBodyProfile}>
               <View style={styles.formGroup}>
-                <Text style={[styles.label, { color: colors.textSecondary }]}>Nom d'utilisateur</Text>
-                <TextInput
-                  style={[styles.input, {
-                    backgroundColor: colors.background,
-                    borderColor: colors.border,
-                    color: colors.text
-                  }]}
-                  value={username}
-                  onChangeText={setUsername}
-                  placeholder="Votre nom d'utilisateur"
-                  placeholderTextColor={colors.textSecondary}
-                />
+                <Text style={[styles.label, { color: colors.text }]}>Email</Text>
+                <View style={styles.inputContainer}>
+                  <Mail size={20} color="#64748B" style={styles.inputIcon} />
+                  <TextInput
+                    style={[styles.inputProfile, { color: colors.text }]}
+                    placeholder="Email"
+                    value={email}
+                    onChangeText={setEmail}
+                    autoCapitalize="none"
+                    keyboardType="email-address"
+                    placeholderTextColor="#64748B"
+                  />
+                </View>
               </View>
 
               <View style={styles.formGroup}>
-                <Text style={[styles.label, { color: colors.textSecondary }]}>Email</Text>
-                <TextInput
-                  style={[styles.input, {
-                    backgroundColor: colors.background,
-                    borderColor: colors.border,
-                    color: colors.text
-                  }]}
-                  value={email}
-                  onChangeText={setEmail}
-                  placeholder="Votre email"
-                  placeholderTextColor={colors.textSecondary}
-                  keyboardType="email-address"
-                />
+                <Text style={[styles.label, { color: colors.text }]}>Mot de passe actuel</Text>
+                <View style={styles.inputContainer}>
+                  <Lock size={20} color="#64748B" style={styles.inputIcon} />
+                  <TextInput
+                    style={[styles.inputProfile, { color: colors.text }]}
+                    placeholder="Mot de passe actuel"
+                    value={currentPassword}
+                    onChangeText={setCurrentPassword}
+                    secureTextEntry
+                    placeholderTextColor="#64748B"
+                  />
+                </View>
               </View>
 
-              <View style={styles.modalActions}>
-                <Button
-                  title="Annuler"
-                  variant="outline"
-                  onPress={() => setProfileModalVisible(false)}
-                  style={{ flex: 1, marginRight: 8 }}
-                />
-                <Button
-                  title="Enregistrer"
-                  onPress={handleUpdateProfile}
-                  style={{ flex: 1, marginLeft: 8 }}
-                />
+              <View style={styles.formGroup}>
+                <Text style={[styles.label, { color: colors.text }]}>Nouveau mot de passe</Text>
+                <View style={styles.inputContainer}>
+                  <Lock size={20} color="#64748B" style={styles.inputIcon} />
+                  <TextInput
+                    style={[styles.inputProfile, { color: colors.text }]}
+                    placeholder="Nouveau mot de passe"
+                    value={newPassword}
+                    onChangeText={setNewPassword}
+                    secureTextEntry
+                    placeholderTextColor="#64748B"
+                  />
+                </View>
               </View>
-            </View>
+
+              <Button
+                title={isLoading ? 'Mise à jour...' : 'Mettre à jour le profil'}
+                onPress={handleUpdateProfile}
+                style={styles.submitButton}
+                disabled={isLoading}
+                loading={isLoading}
+              />
+            </ScrollView>
           </View>
         </View>
       </Modal>
@@ -1105,5 +1156,52 @@ const styles = StyleSheet.create({
   aboutText: {
     fontSize: 14,
     lineHeight: 20,
+  },
+  modalContainer: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  modalContentProfile: {
+    width: '90%',
+    maxHeight: '80%',
+    borderRadius: 12,
+    padding: 20,
+  },
+  modalHeaderProfile: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 20,
+  },
+  modalTitleProfile: {
+    fontSize: 20,
+    fontWeight: '600',
+  },
+  closeButtonProfile: {
+    padding: 8,
+  },
+  modalBodyProfile: {
+    maxHeight: '80%',
+  },
+  inputContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'white',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+  },
+  inputIcon: {
+    padding: 12,
+  },
+  inputProfile: {
+    flex: 1,
+    padding: 12,
+    fontSize: 16,
+  },
+  submitButton: {
+    marginTop: 24,
   },
 });

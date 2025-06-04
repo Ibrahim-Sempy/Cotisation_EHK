@@ -29,7 +29,6 @@ export default function MembersScreen() {
   const [nom, setNom] = useState('');
   const [prenom, setPrenom] = useState('');
   const [telephone, setTelephone] = useState('');
-  const [email, setEmail] = useState('');
 
   useEffect(() => {
     fetchMembers();
@@ -46,7 +45,6 @@ export default function MembersScreen() {
     setNom('');
     setPrenom('');
     setTelephone('');
-    setEmail('');
     setModalVisible(true);
   };
 
@@ -55,7 +53,6 @@ export default function MembersScreen() {
     setNom(member.nom);
     setPrenom(member.prenom);
     setTelephone(member.telephone || '');
-    setEmail(member.email || '');
     setModalVisible(true);
   };
 
@@ -69,7 +66,6 @@ export default function MembersScreen() {
       nom: nom.trim(),
       prenom: prenom.trim(),
       telephone: telephone.trim() || undefined,
-      email: email.trim() || undefined,
     };
 
     try {
@@ -97,9 +93,8 @@ export default function MembersScreen() {
   const filteredMembers = members.filter(member => {
     const fullName = `${member.nom} ${member.prenom}`.toLowerCase();
     const phone = member.telephone?.toLowerCase() || '';
-    const email = member.email?.toLowerCase() || '';
     const query = searchQuery.toLowerCase();
-    return fullName.includes(query) || phone.includes(query) || email.includes(query);
+    return fullName.includes(query) || phone.includes(query);
   });
 
   return (
@@ -229,23 +224,6 @@ export default function MembersScreen() {
                   placeholder="Numéro de téléphone"
                   placeholderTextColor={colors.textSecondary}
                   keyboardType="phone-pad"
-                />
-              </View>
-
-              <View style={styles.formGroup}>
-                <Text style={[styles.label, { color: colors.textSecondary }]}>Email</Text>
-                <TextInput
-                  style={[styles.input, {
-                    borderColor: colors.border,
-                    color: colors.text,
-                    backgroundColor: colors.background
-                  }]}
-                  value={email}
-                  onChangeText={setEmail}
-                  placeholder="Adresse email"
-                  placeholderTextColor={colors.textSecondary}
-                  keyboardType="email-address"
-                  autoCapitalize="none"
                 />
               </View>
 

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
     View,
     Text,
@@ -13,9 +13,10 @@ import { useRouter } from 'expo-router';
 import { ArrowLeft, UserPlus, X, Shield } from 'lucide-react-native';
 import Button from '../components/Button';
 import ErrorMessage from '../components/ErrorMessage';
+import { supabase } from '../lib/supabase';
 
 type User = {
-    id: number;
+    id: string;
     username: string;
     role: string;
     email: string;
@@ -26,6 +27,7 @@ export default function UsersScreen() {
     const [modalVisible, setModalVisible] = useState(false);
     const [errorMsg, setErrorMsg] = useState<string | null>(null);
     const [currentUser, setCurrentUser] = useState<User | null>(null);
+    const [isLoading, setIsLoading] = useState(true);
 
     // Form state
     const [username, setUsername] = useState('');
@@ -33,11 +35,42 @@ export default function UsersScreen() {
     const [password, setPassword] = useState('');
     const [role, setRole] = useState('user');
 
-    // Mock data - À remplacer par les vraies données
-    const [users, setUsers] = useState<User[]>([
-        { id: 1, username: 'admin', role: 'admin', email: 'admin@example.com' },
-        { id: 2, username: 'user1', role: 'user', email: 'user1@example.com' },
-    ]);
+    // État des utilisateurs
+    const [users, setUsers] = useState<User[]>([]);
+
+    // Charger les utilisateurs au démarrage
+    useEffect(() => {
+        fetchUsers();
+    }, []);
+
+    const fetchUsers = async () => {
+        try {
+            setIsLoading(true);
+            const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+            if (sessionError) throw sessionError;
+
+            // Récupérer les utilisateurs depuis la table profiles
+            const { data: profiles, error } = await supabase
+                .from('profiles')
+                .select('*');
+
+            if (error) throw error;
+
+            const formattedUsers = profiles.map(profile => ({
+                id: profile.id,
+                username: profile.username || profile.email?.split('@')[0] || '',
+                email: profile.email || '',
+                role: profile.role || 'user'
+            }));
+
+            setUsers(formattedUsers);
+        } catch (error: any) {
+            console.error('Erreur lors du chargement des utilisateurs:', error);
+            setErrorMsg(error.message);
+        } finally {
+            setIsLoading(false);
+        }
+    };
 
     const openAddModal = () => {
         setCurrentUser(null);
@@ -65,34 +98,68 @@ export default function UsersScreen() {
 
         try {
             if (currentUser) {
-                // TODO: Implémenter la mise à jour de l'utilisateur
-                setUsers(users.map(u =>
-                    u.id === currentUser.id
-                        ? { ...u, username, email, role }
-                        : u
-                ));
+                // Mise à jour de l'utilisateur
+                const { error } = await supabase
+                    .from('profiles')
+                    .update({
+                        username,
+                        role,
+                        email
+                    })
+                    .eq('id', currentUser.id);
+
+                if (error) throw error;
             } else {
-                // TODO: Implémenter la création de l'utilisateur
-                const newUser: User = {
-                    id: users.length + 1,
-                    username,
+                // Création d'un nouvel utilisateur
+                const { data, error: signUpError } = await supabase.auth.signUp({
                     email,
-                    role,
-                };
-                setUsers([...users, newUser]);
+                    password,
+                    options: {
+                        data: {
+                            username,
+                            role
+                        }
+                    }
+                });
+                if (signUpError) throw signUpError;
+
+                // Créer le profil dans la table profiles
+                if (data.user) {
+                    const { error: profileError } = await supabase
+                        .from('profiles')
+                        .insert({
+                            id: data.user.id,
+                            username,
+                            email,
+                            role
+                        });
+
+                    if (profileError) throw profileError;
+                }
             }
             setModalVisible(false);
             setErrorMsg(null);
+            // Recharger la liste des utilisateurs
+            await fetchUsers();
         } catch (error: any) {
+            console.error('Erreur lors de la sauvegarde:', error);
             setErrorMsg(error.message);
         }
     };
 
-    const handleDeleteUser = async (id: number) => {
+    const handleDeleteUser = async (id: string) => {
         try {
-            // TODO: Implémenter la suppression de l'utilisateur
-            setUsers(users.filter(u => u.id !== id));
+            // Supprimer le profil
+            const { error: profileError } = await supabase
+                .from('profiles')
+                .delete()
+                .eq('id', id);
+
+            if (profileError) throw profileError;
+
+            await fetchUsers();
         } catch (error: any) {
+            console.error('Erreur lors de la suppression:', error);
             setErrorMsg(error.message);
         }
     };
@@ -161,7 +228,7 @@ export default function UsersScreen() {
             {/* Users List */}
             <FlatList
                 data={users}
-                keyExtractor={(item) => item.id.toString()}
+                keyExtractor={(item) => item.id}
                 renderItem={renderUserItem}
                 contentContainerStyle={styles.listContent}
             />

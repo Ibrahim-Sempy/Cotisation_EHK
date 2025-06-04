@@ -8,6 +8,20 @@ type User = {
     email: string;
     created_at: string;
     last_sign_in_at?: string;
+    user_metadata?: {
+        email?: string;
+        email_verified?: boolean;
+        phone_verified?: boolean;
+        sub?: string;
+        [key: string]: any;
+    };
+    app_metadata?: {
+        provider?: string;
+        providers?: string[];
+        [key: string]: any;
+    };
+    role?: string;
+    updated_at?: string;
 };
 
 type AuthContextType = {
@@ -16,7 +30,7 @@ type AuthContextType = {
     signIn: (email: string, password: string) => Promise<void>;
     signUp: (email: string, password: string) => Promise<{ requiresEmailConfirmation: boolean }>;
     signOut: () => Promise<void>;
-    updateProfile: (data: Partial<User>) => Promise<void>;
+    updateProfile: (data: Partial<User> & { password?: string; currentPassword?: string }) => Promise<void>;
     resetData: () => Promise<void>;
     loading: boolean;
 };
@@ -29,7 +43,11 @@ const mapSupabaseUser = (user: SupabaseUser | null): User | null => {
         id: user.id,
         email: user.email || '',
         created_at: user.created_at,
-        last_sign_in_at: user.last_sign_in_at
+        last_sign_in_at: user.last_sign_in_at,
+        user_metadata: user.user_metadata,
+        app_metadata: user.app_metadata,
+        role: user.role,
+        updated_at: user.updated_at
     };
 };
 
@@ -65,11 +83,18 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 
     const signIn = async (email: string, password: string) => {
         try {
-            const { error } = await supabase.auth.signInWithPassword({
+            const { data, error } = await supabase.auth.signInWithPassword({
                 email,
                 password,
             });
             if (error) throw error;
+
+            // Récupérer les données complètes de l'utilisateur
+            if (data.user) {
+                const { data: { user: userData }, error: userError } = await supabase.auth.getUser();
+                if (userError) throw userError;
+                setUser(mapSupabaseUser(userData));
+            }
         } catch (error: any) {
             console.error('Erreur de connexion:', error.message);
             throw error;
@@ -124,15 +149,35 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         }
     };
 
-    const updateProfile = async (data: Partial<User>) => {
+    const updateProfile = async (data: Partial<User> & { password?: string; currentPassword?: string }) => {
         try {
-            const { error } = await supabase.auth.updateUser({
-                email: data.email,
-            });
-            if (error) throw error;
-            setUser(prev => prev ? { ...prev, ...data } : null);
+            const updates: any = {};
+
+            // Mettre à jour l'email si nécessaire
+            if (data.email && data.email !== user?.email) {
+                updates.email = data.email;
+            }
+
+            // Mettre à jour le mot de passe si nécessaire
+            if (data.password && data.currentPassword) {
+                const { error: updateError } = await supabase.auth.updateUser({
+                    password: data.password
+                });
+                if (updateError) throw updateError;
+            }
+
+            // Mettre à jour les autres données si nécessaire
+            if (Object.keys(updates).length > 0) {
+                const { error: updateError } = await supabase.auth.updateUser(updates);
+                if (updateError) throw updateError;
+            }
+
+            // Mettre à jour l'état local
+            const { data: { user: updatedUser }, error: userError } = await supabase.auth.getUser();
+            if (userError) throw userError;
+            setUser(mapSupabaseUser(updatedUser));
         } catch (error: any) {
-            console.error('Erreur de mise à jour du profil:', error.message);
+            console.error('Erreur de mise à jour du profil:', error);
             throw error;
         }
     };
