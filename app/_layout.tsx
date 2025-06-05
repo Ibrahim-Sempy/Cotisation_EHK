@@ -18,14 +18,16 @@ function RootLayoutNav() {
           }}
         />
       ) : (
+        <Stack.Screen
+          name="(tabs)"
+          options={{
+            headerShown: false,
+            animation: 'fade'
+          }}
+        />
+      )}
+      {isAuthenticated && (
         <>
-          <Stack.Screen
-            name="(tabs)"
-            options={{
-              headerShown: false,
-              animation: 'fade'
-            }}
-          />
           <Stack.Screen
             name="users"
             options={{

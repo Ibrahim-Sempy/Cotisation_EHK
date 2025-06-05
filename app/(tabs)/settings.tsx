@@ -20,8 +20,9 @@ import { useRouter } from 'expo-router';
 import Button from '../../components/Button';
 import ErrorMessage from '../../components/ErrorMessage';
 import { useStore } from '../../store/useStore';
-import RNHTMLtoPDF from 'react-native-html-to-pdf';
 import * as FileSystem from 'expo-file-system';
+import * as Print from 'expo-print';
+import * as Sharing from 'expo-sharing';
 import { formatAmount } from '../../utils/formatters';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
@@ -30,6 +31,8 @@ export default function SettingsScreen() {
   const { theme, setTheme, colors } = useTheme();
   const router = useRouter();
   const { contributions, payments, members } = useStore();
+  const [progress, setProgress] = useState(0);
+  const [isExporting, setIsExporting] = useState(false);
 
   // Toggle states
   const [notificationsEnabled, setNotificationsEnabled] = useState(true);
@@ -288,68 +291,344 @@ export default function SettingsScreen() {
 
   const handleExportAll = async () => {
     try {
-      const hasPermission = await requestStoragePermission();
-      if (!hasPermission) {
-        setErrorMsg('Permission de stockage refusée');
-        return;
-      }
+      setIsExporting(true);
+      setProgress(0);
 
-      const htmlContent = generatePDFContent();
-      const options = {
+      // Afficher l'indicateur de chargement avec progression
+      Alert.alert(
+        'Génération du rapport',
+        'Veuillez patienter pendant la génération du rapport complet...',
+        [{ text: 'OK' }],
+        { cancelable: false }
+      );
+
+      setProgress(20); // Préparation des données
+
+      // Calculer les statistiques globales
+      const totalMembers = members.length;
+      const totalContributions = contributions.length;
+      const totalPayments = payments.length;
+      const totalCollected = payments.reduce((sum, p) =>
+        sum + (p.payer ? (contributions.find(c => c.id === p.cotisation_id)?.montant_unitaire || 0) : 0), 0
+      );
+      const paymentRate = (payments.filter(p => p.payer).length / payments.length) * 100;
+
+      setProgress(40); // Génération du contenu HTML
+
+      const htmlContent = `
+        <!DOCTYPE html>
+        <html>
+          <head>
+            <meta charset="utf-8">
+            <title>Rapport complet des cotisations</title>
+            <style>
+              body { font-family: Arial, sans-serif; }
+              .header { text-align: center; margin-bottom: 20px; }
+              .section { margin-bottom: 20px; }
+              table { width: 100%; border-collapse: collapse; margin-bottom: 20px; }
+              th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+              th { background-color: #f5f5f5; }
+              .total { font-weight: bold; }
+              .paid { color: #22C55E; }
+              .unpaid { color: #EF4444; }
+              .stats { display: flex; justify-content: space-between; margin-bottom: 20px; }
+              .stat-box { 
+                background-color: #f8f9fa;
+                padding: 15px;
+                border-radius: 8px;
+                width: 48%;
+                text-align: center;
+              }
+              .stat-value { font-size: 24px; font-weight: bold; color: #4F46E5; }
+              .stat-label { color: #64748B; margin-top: 5px; }
+            </style>
+          </head>
+          <body>
+            <div class="header">
+              <h1>Rapport complet des cotisations</h1>
+              <p>Date d'export: ${new Date().toLocaleDateString()}</p>
+            </div>
+
+            <div class="section">
+              <h2>Statistiques globales</h2>
+              <div class="stats">
+                <div class="stat-box">
+                  <div class="stat-value">${totalMembers}</div>
+                  <div class="stat-label">Total des membres</div>
+                </div>
+                <div class="stat-box">
+                  <div class="stat-value">${totalContributions}</div>
+                  <div class="stat-label">Types de cotisations</div>
+                </div>
+              </div>
+              <div class="stats">
+                <div class="stat-box">
+                  <div class="stat-value">${formatAmount(totalCollected)}</div>
+                  <div class="stat-label">Total collecté</div>
+                </div>
+                <div class="stat-box">
+                  <div class="stat-value">${paymentRate.toFixed(0)}%</div>
+                  <div class="stat-label">Taux de paiement</div>
+                </div>
+              </div>
+            </div>
+
+            <div class="section">
+              <h2>Liste des membres</h2>
+              <table>
+                <tr>
+                  <th>Nom</th>
+                  <th>Prénom</th>
+                  <th>Téléphone</th>
+                  <th>Email</th>
+                  <th>Date d'inscription</th>
+                </tr>
+                ${members.map(member => `
+                  <tr>
+                    <td>${member.nom}</td>
+                    <td>${member.prenom}</td>
+                    <td>${member.telephone || '-'}</td>
+                    <td>${member.email || '-'}</td>
+                    <td>${member.created_at ? new Date(member.created_at).toLocaleDateString() : '-'}</td>
+                  </tr>
+                `).join('')}
+              </table>
+            </div>
+
+            <div class="section">
+              <h2>Détails des cotisations</h2>
+              <table>
+                <tr>
+                  <th>Type</th>
+                  <th>Description</th>
+                  <th>Montant unitaire</th>
+                  <th>Date d'échéance</th>
+                  <th>Nombre de paiements</th>
+                  <th>Montant collecté</th>
+                </tr>
+                ${contributions.map(contribution => {
+        const contributionPayments = payments.filter(p => p.cotisation_id === contribution.id);
+        const paidCount = contributionPayments.filter(p => p.payer).length;
+        const collectedAmount = paidCount * contribution.montant_unitaire;
+        return `
+                    <tr>
+                      <td>${contribution.type}</td>
+                      <td>${contribution.description}</td>
+                      <td>${formatAmount(contribution.montant_unitaire)}</td>
+                      <td>${contribution.date_echeance ? new Date(contribution.date_echeance).toLocaleDateString() : '-'}</td>
+                      <td>${paidCount}/${contributionPayments.length}</td>
+                      <td>${formatAmount(collectedAmount)}</td>
+                    </tr>
+                  `;
+      }).join('')}
+              </table>
+            </div>
+
+            <div class="section">
+              <h2>Détails des paiements</h2>
+              <table>
+                <tr>
+                  <th>Membre</th>
+                  <th>Type de cotisation</th>
+                  <th>Montant</th>
+                  <th>Statut</th>
+                  <th>Date de paiement</th>
+                </tr>
+                ${payments.map(payment => {
+        const member = members.find(m => m.id === payment.membre_id);
+        const contribution = contributions.find(c => c.id === payment.cotisation_id);
+        return `
+                    <tr>
+                      <td>${member ? `${member.nom} ${member.prenom}` : '-'}</td>
+                      <td>${contribution ? contribution.type : '-'}</td>
+                      <td>${contribution ? formatAmount(contribution.montant_unitaire) : '-'}</td>
+                      <td class="${payment.payer ? 'paid' : 'unpaid'}">
+                        ${payment.payer ? 'Payé' : 'Non payé'}
+                      </td>
+                      <td>${payment.date_paiement ? new Date(payment.date_paiement).toLocaleDateString() : '-'}</td>
+                    </tr>
+                  `;
+      }).join('')}
+              </table>
+            </div>
+          </body>
+        </html>
+      `;
+
+      setProgress(60); // Génération du PDF
+
+      const { uri } = await Print.printToFileAsync({
         html: htmlContent,
-        fileName: `rapport_cotisations_${new Date().toISOString().split('T')[0]}`,
-        directory: 'Documents',
-      };
+        width: 612, // Letter size width in points
+        height: 792, // Letter size height in points
+      });
 
-      const file = await RNHTMLtoPDF.convert(options);
+      setProgress(80); // Préparation du partage
 
-      if (file.filePath) {
-        // Pour Android, ouvrir le fichier
-        if (Platform.OS === 'android') {
-          await Linking.openURL(`file://${file.filePath}`);
-        }
-        // Pour iOS, le fichier est déjà dans le dossier Documents
+      if (await Sharing.isAvailableAsync()) {
+        await Sharing.shareAsync(uri, {
+          mimeType: 'application/pdf',
+          dialogTitle: 'Partager le rapport',
+          UTI: 'com.adobe.pdf'
+        });
+      } else {
         Alert.alert(
           'Export réussi',
-          `Le fichier a été sauvegardé dans le dossier Documents.`,
+          'Le rapport a été généré mais le partage n\'est pas disponible sur votre appareil.',
           [{ text: 'OK' }]
         );
       }
+
+      setProgress(100); // Terminé
+
     } catch (error: any) {
-      setErrorMsg(error.message);
+      setErrorMsg('Erreur lors de l\'exportation: ' + error.message);
+    } finally {
+      setIsExporting(false);
+      setProgress(0);
     }
   };
 
   const handleExportByType = async (contributionId: number) => {
     try {
-      const hasPermission = await requestStoragePermission();
-      if (!hasPermission) {
-        setErrorMsg('Permission de stockage refusée');
+      setIsExporting(true);
+      setProgress(0);
+
+      // Afficher l'indicateur de chargement avec progression
+      Alert.alert(
+        'Génération du rapport',
+        'Veuillez patienter pendant la génération du rapport...',
+        [{ text: 'OK' }],
+        { cancelable: false }
+      );
+
+      setProgress(30); // Préparation des données
+
+      const contribution = contributions.find(c => c.id === contributionId);
+      if (!contribution) {
+        setErrorMsg('Cotisation non trouvée');
         return;
       }
 
-      const contribution = contributions.find(c => c.id === contributionId);
-      const htmlContent = generatePDFContent(contributionId);
-      const options = {
+      // Filtrer les paiements pour cette cotisation
+      const contributionPayments = payments.filter(p => p.cotisation_id === contributionId);
+      const membersWithPayments = members.filter(m =>
+        contributionPayments.some(p => p.membre_id === m.id)
+      );
+
+      // Générer le contenu HTML
+      const htmlContent = `
+        <!DOCTYPE html>
+        <html>
+          <head>
+            <meta charset="utf-8">
+            <title>Rapport de cotisation - ${contribution.type}</title>
+            <style>
+              body { font-family: Arial, sans-serif; }
+              .header { text-align: center; margin-bottom: 20px; }
+              .section { margin-bottom: 20px; }
+              table { width: 100%; border-collapse: collapse; }
+              th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+              th { background-color: #f5f5f5; }
+              .total { font-weight: bold; }
+              .paid { color: #22C55E; }
+              .unpaid { color: #EF4444; }
+            </style>
+          </head>
+          <body>
+            <div class="header">
+              <h1>Rapport de cotisation - ${contribution.type}</h1>
+              <p>Date d'export: ${new Date().toLocaleDateString()}</p>
+            </div>
+
+            <div class="section">
+              <h2>Détails de la cotisation</h2>
+              <table>
+                <tr>
+                  <th>Type</th>
+                  <th>Description</th>
+                  <th>Montant unitaire</th>
+                  <th>Date d'échéance</th>
+                </tr>
+                <tr>
+                  <td>${contribution.type}</td>
+                  <td>${contribution.description}</td>
+                  <td>${formatAmount(contribution.montant_unitaire)}</td>
+                  <td>${contribution.date_echeance ? new Date(contribution.date_echeance).toLocaleDateString() : '-'}</td>
+                </tr>
+              </table>
+            </div>
+
+            <div class="section">
+              <h2>État des paiements</h2>
+              <table>
+                <tr>
+                  <th>Membre</th>
+                  <th>Téléphone</th>
+                  <th>Statut</th>
+                  <th>Date de paiement</th>
+                </tr>
+                ${membersWithPayments.map(member => {
+        const payment = contributionPayments.find(p => p.membre_id === member.id);
+        return `
+                    <tr>
+                      <td>${member.nom} ${member.prenom}</td>
+                      <td>${member.telephone || '-'}</td>
+                      <td class="${payment?.payer ? 'paid' : 'unpaid'}">
+                        ${payment?.payer ? 'Payé' : 'Non payé'}
+                      </td>
+                      <td>${payment?.date_paiement ? new Date(payment.date_paiement).toLocaleDateString() : '-'}</td>
+                    </tr>
+                  `;
+      }).join('')}
+              </table>
+            </div>
+
+            <div class="section">
+              <h2>Résumé</h2>
+              <p>Nombre total de membres: ${membersWithPayments.length}</p>
+              <p>Nombre de paiements effectués: ${contributionPayments.filter(p => p.payer).length}</p>
+              <p>Montant total collecté: ${formatAmount(contributionPayments.filter(p => p.payer).length * contribution.montant_unitaire)}</p>
+              <p>Montant restant à collecter: ${formatAmount((membersWithPayments.length - contributionPayments.filter(p => p.payer).length) * contribution.montant_unitaire)}</p>
+            </div>
+          </body>
+        </html>
+      `;
+
+      // Générer le nom du fichier
+      const fileName = `rapport_${contribution.type.toLowerCase().replace(/\s+/g, '_')}_${new Date().toISOString().split('T')[0]}`;
+
+      setProgress(60); // Génération du PDF
+
+      const { uri } = await Print.printToFileAsync({
         html: htmlContent,
-        fileName: `rapport_${contribution?.type.toLowerCase().replace(/\s+/g, '_')}_${new Date().toISOString().split('T')[0]}`,
-        directory: 'Documents',
-      };
+        width: 612,
+        height: 792,
+      });
 
-      const file = await RNHTMLtoPDF.convert(options);
+      setProgress(80); // Préparation du partage
 
-      if (file.filePath) {
-        if (Platform.OS === 'android') {
-          await Linking.openURL(`file://${file.filePath}`);
-        }
+      if (await Sharing.isAvailableAsync()) {
+        await Sharing.shareAsync(uri, {
+          mimeType: 'application/pdf',
+          dialogTitle: 'Partager le rapport',
+          UTI: 'com.adobe.pdf'
+        });
+      } else {
         Alert.alert(
           'Export réussi',
-          `Le fichier a été sauvegardé dans le dossier Documents.`,
+          'Le rapport a été généré mais le partage n\'est pas disponible sur votre appareil.',
           [{ text: 'OK' }]
         );
       }
+
+      setProgress(100); // Terminé
+
     } catch (error: any) {
-      setErrorMsg(error.message);
+      setErrorMsg('Erreur lors de l\'exportation: ' + error.message);
+    } finally {
+      setIsExporting(false);
+      setProgress(0);
     }
   };
 
@@ -527,6 +806,25 @@ export default function SettingsScreen() {
         message={errorMsg || ''}
         onDismiss={() => setErrorMsg(null)}
       />
+
+      {isExporting && (
+        <View style={[styles.progressContainer, { backgroundColor: colors.card }]}>
+          <Text style={[styles.progressText, { color: colors.text }]}>
+            Génération en cours... {progress}%
+          </Text>
+          <View style={[styles.progressBar, { backgroundColor: colors.border }]}>
+            <View
+              style={[
+                styles.progressFill,
+                {
+                  width: `${progress}%`,
+                  backgroundColor: colors.primary
+                }
+              ]}
+            />
+          </View>
+        </View>
+      )}
 
       <ScrollView style={styles.content}>
         {/* User Section */}
@@ -1203,5 +1501,32 @@ const styles = StyleSheet.create({
   },
   submitButton: {
     marginTop: 24,
+  },
+  progressContainer: {
+    padding: 16,
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    zIndex: 1000,
+    elevation: 5,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 3.84,
+  },
+  progressText: {
+    fontSize: 14,
+    marginBottom: 8,
+    textAlign: 'center',
+  },
+  progressBar: {
+    height: 4,
+    borderRadius: 2,
+    overflow: 'hidden',
+  },
+  progressFill: {
+    height: '100%',
+    borderRadius: 2,
   },
 });

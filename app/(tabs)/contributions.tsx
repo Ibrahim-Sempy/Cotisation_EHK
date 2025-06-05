@@ -7,7 +7,8 @@ import {
   TouchableOpacity,
   Modal,
   TextInput,
-  ScrollView
+  ScrollView,
+  Alert
 } from 'react-native';
 import { useStore } from '../../store/useStore';
 import ContributionItem from '../../components/ContributionItem';
@@ -102,7 +103,32 @@ export default function ContributionsScreen() {
 
   const handleDeleteContribution = async (id: number) => {
     try {
-      await deleteContribution(id);
+      // Trouver la cotisation à supprimer
+      const contributionToDelete = contributions.find(c => c.id === id);
+      if (!contributionToDelete) return;
+
+      // Afficher la confirmation
+      Alert.alert(
+        'Supprimer la cotisation',
+        `Êtes-vous sûr de vouloir supprimer la cotisation "${contributionToDelete.type}" ?`,
+        [
+          {
+            text: 'Annuler',
+            style: 'cancel'
+          },
+          {
+            text: 'Supprimer',
+            style: 'destructive',
+            onPress: async () => {
+              try {
+                await deleteContribution(id);
+              } catch (error: any) {
+                setErrorMsg(error.message);
+              }
+            }
+          }
+        ]
+      );
     } catch (error: any) {
       setErrorMsg(error.message);
     }

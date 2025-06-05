@@ -260,7 +260,6 @@ export default function UsersScreen() {
                                     placeholder="Nom d'utilisateur"
                                 />
                             </View>
-
                             <View style={styles.formGroup}>
                                 <Text style={styles.label}>Email*</Text>
                                 <TextInput

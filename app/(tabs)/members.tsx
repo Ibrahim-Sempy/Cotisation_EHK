@@ -7,7 +7,8 @@ import {
   TextInput,
   TouchableOpacity,
   Modal,
-  ScrollView
+  ScrollView,
+  Alert
 } from 'react-native';
 import { useStore } from '../../store/useStore';
 import MemberItem from '../../components/MemberItem';
@@ -83,7 +84,32 @@ export default function MembersScreen() {
 
   const handleDeleteMember = async (id: number) => {
     try {
-      await deleteMember(id);
+      // Trouver le membre à supprimer
+      const memberToDelete = members.find(m => m.id === id);
+      if (!memberToDelete) return;
+
+      // Afficher la confirmation
+      Alert.alert(
+        'Supprimer le membre',
+        `Êtes-vous sûr de vouloir supprimer ${memberToDelete.prenom} ${memberToDelete.nom} ?`,
+        [
+          {
+            text: 'Annuler',
+            style: 'cancel'
+          },
+          {
+            text: 'Supprimer',
+            style: 'destructive',
+            onPress: async () => {
+              try {
+                await deleteMember(id);
+              } catch (error: any) {
+                setErrorMsg(error.message);
+              }
+            }
+          }
+        ]
+      );
     } catch (error: any) {
       setErrorMsg(error.message);
     }
