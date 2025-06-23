@@ -149,13 +149,11 @@ export default function UsersScreen() {
 
     const handleDeleteUser = async (id: string) => {
         try {
-            // Supprimer le profil
-            const { error: profileError } = await supabase
-                .from('profiles')
-                .delete()
-                .eq('id', id);
-
-            if (profileError) throw profileError;
+            // Supprimer l'utilisateur via la fonction Edge
+            const { error: deleteError } = await supabase.functions.invoke('delete-user', {
+                body: { userId: id }
+            });
+            if (deleteError) throw deleteError;
 
             await fetchUsers();
         } catch (error: any) {
@@ -260,6 +258,7 @@ export default function UsersScreen() {
                                     placeholder="Nom d'utilisateur"
                                 />
                             </View>
+
                             <View style={styles.formGroup}>
                                 <Text style={styles.label}>Email*</Text>
                                 <TextInput
